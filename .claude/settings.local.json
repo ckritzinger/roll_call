@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(npx nuxi@latest init . --packageManager npm --gitInit=false)",
+      "Bash(npx nuxi *)",
+      "Bash(supabase gen *)",
+      "Read(//tmp/**)",
+      "Skill(run)",
+      "Bash(python3 -m json.tool)"
+    ]
+  }
+}
