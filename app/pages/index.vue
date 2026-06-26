@@ -1,22 +1,23 @@
 <template>
   <div class="p-4 space-y-4">
     <div class="flex items-center justify-between">
-      <h2 class="text-base font-semibold text-gray-900">This Week</h2>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-semibold text-gray-900">This Week</h2>
         <button
-          class="text-sm text-gray-500 font-medium disabled:opacity-40"
+          class="text-gray-400 disabled:opacity-30 leading-none"
           :disabled="generating"
+          :title="generating ? 'Generating…' : 'Generate this week'"
           @click="generateWeek"
         >
-          {{ generating ? 'Generating…' : '⟳ Generate' }}
-        </button>
-        <button
-          class="text-sm text-blue-600 font-medium"
-          @click="showPast = !showPast"
-        >
-          {{ showPast ? 'Hide past' : 'Show past' }}
+          {{ generating ? '⏳' : '🔄' }}
         </button>
       </div>
+      <button
+        class="text-sm text-blue-600 font-medium"
+        @click="showPast = !showPast"
+      >
+        {{ showPast ? 'Hide past' : 'Show past' }}
+      </button>
     </div>
 
     <div v-if="loading" class="text-sm text-gray-400">Loading…</div>
@@ -47,7 +48,7 @@
         </button>
       </li>
       <li v-if="!visibleSessions.length" class="text-sm text-gray-400 py-8 text-center">
-        No sessions this week. Hit Generate to create them.
+        {{ sessions.length ? 'No upcoming sessions, have a great weekend!' : 'No sessions this week. Hit 🔄 to generate them.' }}
       </li>
     </ul>
 
