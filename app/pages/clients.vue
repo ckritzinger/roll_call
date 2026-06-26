@@ -16,7 +16,7 @@
       >
         <div class="flex items-center justify-between">
           <p class="font-medium text-gray-900">{{ client.name }}</p>
-          <p class="text-sm text-gray-500">R{{ client.rate.toFixed(2) }}</p>
+          <p class="text-sm text-gray-500">R{{ client.rate.toFixed(2) }} / R{{ client.month_rate.toFixed(2) }}pm</p>
         </div>
         <p class="text-sm text-gray-500">
           {{ client.location }} · {{ client.service_type }}

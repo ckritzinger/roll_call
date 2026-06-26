@@ -40,6 +40,7 @@ export interface Client {
   service_type: ServiceType
   rate: number
   scale_enabled: boolean
+  month_rate: number
   archived: boolean
   created_at: string
 }

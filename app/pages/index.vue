@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { getCurrentWeekRange, generateCurrentWeekData } from '~/composables/useWeekGeneration'
+import { getCurrentWeekRange } from '~/composables/useWeekGeneration'
 import type { SessionWithDetails } from '~/types'
 
 const supabase = useSupabaseClient()
@@ -111,7 +111,7 @@ async function onAdded() {
 }
 
 onMounted(async () => {
-  await generateCurrentWeekData()
+  await $fetch('/api/generate-week', { method: 'POST' })
   await loadWeek()
   loading.value = false
 })

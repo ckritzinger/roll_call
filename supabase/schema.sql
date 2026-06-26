@@ -44,6 +44,7 @@ create table clients (
   service_type text not null check (service_type in ('Group', 'Private', 'Both')),
   rate numeric(10, 2) not null check (rate >= 0),
   scale_enabled boolean not null default false,
+  month_rate numeric(10, 2) not null default 0,
   archived boolean not null default false,
   created_at timestamptz not null default now()
 );

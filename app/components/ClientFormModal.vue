@@ -31,6 +31,11 @@
         <input v-model.number="form.rate" type="number" min="0" step="0.01" class="mt-1 w-full border rounded-lg p-2" />
       </label>
 
+      <label class="block text-sm">
+        Month Rate (R)
+        <input v-model.number="form.month_rate" type="number" min="0" step="0.01" class="mt-1 w-full border rounded-lg p-2" />
+      </label>
+
       <label class="flex items-center gap-2 text-sm">
         <input v-model="form.scale_enabled" type="checkbox" />
         Scale (body composition tracking)
@@ -87,6 +92,7 @@ const form = reactive({
   location: props.client?.location ?? 'Sedgefield',
   service_type: props.client?.service_type ?? 'Group',
   rate: props.client?.rate ?? 0,
+  month_rate: props.client?.month_rate ?? 0,
   scale_enabled: props.client?.scale_enabled ?? false,
   archived: props.client?.archived ?? false
 })
