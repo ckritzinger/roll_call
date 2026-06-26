@@ -7,7 +7,8 @@
       "Bash(supabase gen *)",
       "Read(//tmp/**)",
       "Skill(run)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(supabase db *)"
     ]
   }
 }

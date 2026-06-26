@@ -14,6 +14,7 @@
           <option>Sedgefield</option>
           <option>Knysna</option>
           <option>Both</option>
+          <option>Zoom</option>
         </select>
       </label>
 
@@ -23,13 +24,25 @@
           <option>Group</option>
           <option>Private</option>
           <option>Both</option>
+          <option>Duet</option>
+          <option>Zoom</option>
         </select>
       </label>
 
-      <label class="block text-sm">
-        Rate (R)
-        <input v-model.number="form.rate" type="number" min="0" step="0.01" class="mt-1 w-full border rounded-lg p-2" />
-      </label>
+      <div class="flex gap-2">
+        <label class="block text-sm flex-1">
+          Rate
+          <input v-model.number="form.rate" type="number" min="0" step="0.01" class="mt-1 w-full border rounded-lg p-2" />
+        </label>
+        <label class="block text-sm w-24">
+          Currency
+          <select v-model="form.currency" class="mt-1 w-full border rounded-lg p-2">
+            <option>ZAR</option>
+            <option>USD</option>
+            <option>CAD</option>
+          </select>
+        </label>
+      </div>
 
       <label class="block text-sm">
         Month Rate (R)
@@ -92,6 +105,7 @@ const form = reactive({
   location: props.client?.location ?? 'Sedgefield',
   service_type: props.client?.service_type ?? 'Group',
   rate: props.client?.rate ?? 0,
+  currency: props.client?.currency ?? 'ZAR',
   month_rate: props.client?.month_rate ?? 0,
   scale_enabled: props.client?.scale_enabled ?? false,
   archived: props.client?.archived ?? false

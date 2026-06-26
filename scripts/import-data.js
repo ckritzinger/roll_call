@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 // Imports data/Barbara Classes - Classes.csv and data/Barbara Classes - Clients.csv
-// into the linked Supabase project. Idempotent: re-running won't create duplicates.
+// into the linked Supabase project. Idempotent: re-running without --wipe won't
+// create duplicates.
 //
-// Validates ALL rows in both CSVs before writing anything — any bad data
-// (unknown location/type, non-integer capacity, unmatched recurring class)
-// aborts the import with no writes made.
+// Validates ALL rows in both CSVs before writing anything — any bad data aborts
+// with no writes made.
 //
-// Usage: node scripts/import-data.js [--dry-run]
+// Usage:
+//   node scripts/import-data.js             # import (idempotent)
+//   node scripts/import-data.js --wipe      # delete all records first, then import
+//   node scripts/import-data.js --dry-run   # validate + show planned changes, no writes
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -17,33 +20,31 @@ import { createClient } from '@supabase/supabase-js'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, '..', 'data')
 const DRY_RUN = process.argv.includes('--dry-run')
+const WIPE = process.argv.includes('--wipe')
 
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('Missing SUPABASE_URL / SUPABASE_KEY (or SUPABASE_SERVICE_ROLE_KEY) in .env')
+  console.error('Missing SUPABASE_URL / SUPABASE_KEY in .env')
   process.exit(1)
 }
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 class ValidationError extends Error {}
 
-// ── CSV tokenizer: returns array-of-arrays (handles quoted fields) ──
+// ── CSV tokenizer ────────────────────────────────────────────────────
 function tokenizeCsv(text) {
   const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
+  let row = [], field = '', inQuotes = false
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
     if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++ } else { inQuotes = false }
-      } else field += c
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++ } else inQuotes = false }
+      else field += c
     } else if (c === '"') inQuotes = true
     else if (c === ',') { row.push(field); field = '' }
     else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i + 1] === '\n') i++
+      if (c === '\r' && text[i+1] === '\n') i++
       row.push(field); field = ''
       if (row.some((f) => f.trim() !== '')) rows.push(row)
       row = []
@@ -53,16 +54,15 @@ function tokenizeCsv(text) {
   return rows.map((r) => r.map((f) => f.trim()))
 }
 
-// ── validators (throw ValidationError, never warn-and-continue) ────
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const LOCATIONS = ['Sedgefield', 'Knysna']
-const CLIENT_LOCATIONS = [...LOCATIONS, 'Both']
-const SERVICE_TYPES = ['Group', 'Private', 'Both']
+// ── validators ───────────────────────────────────────────────────────
+const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const LOCATIONS = ['Sedgefield','Knysna']
+const CLIENT_LOCATIONS = [...LOCATIONS, 'Both', 'Zoom']
+const SERVICE_TYPES = ['Group','Private','Both','Duet','Zoom']
 
 function requireOneOf(value, allowed, label, context) {
-  if (!allowed.includes(value)) {
-    throw new ValidationError(`${context}: invalid ${label} "${value}" (expected one of ${allowed.join(', ')})`)
-  }
+  if (!allowed.includes(value))
+    throw new ValidationError(`${context}: invalid ${label} "${value}" (expected: ${allowed.join(', ')})`)
   return value
 }
 
@@ -79,161 +79,165 @@ function requireInt(raw, label, context) {
   return n
 }
 
-function requireNumber(raw, label, context) {
-  const n = Number(raw)
-  if (raw === '' || Number.isNaN(n) || n < 0) throw new ValidationError(`${context}: ${label} "${raw}" is not a valid non-negative number`)
+// Detect currency from rate string: R/r prefix → ZAR, $ suffix → USD, else ZAR
+function detectCurrency(raw) {
+  if (/^[Rr]/.test(raw)) return 'ZAR'
+  if (/\$$/.test(raw)) return 'USD'
+  return 'ZAR'
+}
+
+// Strip currency symbols and parse; empty → 0
+function parseAmount(raw, label, context) {
+  const stripped = raw.replace(/^[Rr]/, '').replace(/\$$/, '').trim()
+  if (stripped === '') return 0
+  const n = Number(stripped)
+  if (Number.isNaN(n) || n < 0)
+    throw new ValidationError(`${context}: ${label} "${raw}" is not a valid non-negative amount`)
   return n
 }
 
-function requireYN(raw, label, context) {
+// Empty or missing → false; y/Y → true; n/N → false; anything else → error
+function parseYN(raw, label, context) {
   const v = raw.trim().toLowerCase()
-  if (v !== 'y' && v !== 'n') throw new ValidationError(`${context}: ${label} "${raw}" must be "y" or "n"`)
-  return v === 'y'
+  if (v === '' || v === 'n') return false
+  if (v === 'y') return true
+  throw new ValidationError(`${context}: ${label} "${raw}" must be "y", "n", or empty`)
 }
 
-// ── parse + validate Classes.csv -> class slot definitions ─────────
+// ── parse + validate Classes.csv ─────────────────────────────────────
 function loadClassSlotDefs() {
-  const csvPath = path.join(DATA_DIR, 'Barbara Classes - Classes.csv')
-  const rows = tokenizeCsv(readFileSync(csvPath, 'utf-8'))
+  const rows = tokenizeCsv(readFileSync(path.join(DATA_DIR, 'Barbara Classes - Classes.csv'), 'utf-8'))
   rows.shift() // header
 
   const defs = []
   const seenNames = new Set()
   for (const [name, day, time, location, capacity] of rows) {
-    const context = `Classes.csv row "${name}"`
-    if (!name) throw new ValidationError(`Classes.csv: row missing slot name (${[day, time, location, capacity].join(',')})`)
+    const ctx = `Classes.csv "${name}"`
+    if (!name) throw new ValidationError(`Classes.csv: row missing slot name`)
     if (seenNames.has(name)) throw new ValidationError(`Classes.csv: duplicate slot name "${name}"`)
     seenNames.add(name)
-
     defs.push({
       name,
-      day: requireOneOf(day, DAYS, 'day', context),
-      time: normalizeTime(time, context),
-      location: requireOneOf(location, LOCATIONS, 'location', context),
-      capacity: requireInt(capacity, 'capacity', context),
+      day: requireOneOf(day, DAYS, 'day', ctx),
+      time: normalizeTime(time, ctx),
+      location: requireOneOf(location, LOCATIONS, 'location', ctx),
+      capacity: requireInt(capacity, 'capacity', ctx),
     })
   }
   return defs
 }
 
-// ── parse + validate Clients.csv -> client definitions ─────────────
+// ── parse + validate Clients.csv ─────────────────────────────────────
+// Columns: Name[0], Location[1], Type[2], Rate[3], Month Rate[4], Scale[5], Classes[6+]
 function loadClientDefs(slotDefs) {
-  const csvPath = path.join(DATA_DIR, 'Barbara Classes - Clients.csv')
-  const rows = tokenizeCsv(readFileSync(csvPath, 'utf-8'))
-  rows.shift() // header (trailing columns past "Classes" are unnamed — classes are positional)
+  const rows = tokenizeCsv(readFileSync(path.join(DATA_DIR, 'Barbara Classes - Clients.csv'), 'utf-8'))
+  rows.shift() // header
 
   const slotsByName = new Map(slotDefs.map((s) => [s.name, s]))
-
   const defs = []
+
   for (const row of rows) {
-    const [name, location, service_type, rate, scale, ...classEntries] = row
-    const context = `Clients.csv row "${name}"`
+    const [name, location, service_type, rawRate, rawMonthRate, rawScale, ...classEntries] = row
+    const ctx = `Clients.csv "${name}"`
     if (!name) throw new ValidationError(`Clients.csv: row missing client name`)
 
     const recurringSlots = []
-    for (const entry of classEntries.filter((e) => e.trim() !== '')) {
+    for (const entry of classEntries.filter((e) => e !== '')) {
       const slot = slotsByName.get(entry)
-      if (!slot) {
-        throw new ValidationError(
-          `${context}: recurring class "${entry}" does not match any slot name in Classes.csv`
-        )
-      }
+      if (!slot) throw new ValidationError(`${ctx}: recurring class "${entry}" not in Classes.csv`)
       recurringSlots.push(slot)
     }
 
     defs.push({
       name,
-      location: requireOneOf(location, CLIENT_LOCATIONS, 'location', context),
-      service_type: requireOneOf(service_type, SERVICE_TYPES, 'service type', context),
-      rate: requireNumber(rate, 'rate', context),
-      scale_enabled: requireYN(scale, 'scale', context),
+      location: requireOneOf(location, CLIENT_LOCATIONS, 'location', ctx),
+      service_type: requireOneOf(service_type, SERVICE_TYPES, 'service type', ctx),
+      currency: detectCurrency(rawRate),
+      rate: parseAmount(rawRate, 'rate', ctx),
+      month_rate: parseAmount(rawMonthRate, 'month rate', ctx),
+      scale_enabled: parseYN(rawScale, 'scale', ctx),
       recurringSlots,
     })
   }
   return defs
 }
 
-// ── writes (only reached once both files are fully validated) ──────
+// ── wipe ─────────────────────────────────────────────────────────────
+async function wipeAll() {
+  // Delete in FK-safe order
+  const tables = ['sessions', 'client_recurring_slots', 'class_instances', 'invoices', 'clients', 'class_slots']
+  for (const table of tables) {
+    console.log(`  deleting ${table}...`)
+    if (!DRY_RUN) {
+      const { error } = await supabase.from(table).delete().gte('created_at', '1900-01-01')
+      if (error) throw error
+    }
+  }
+}
+
+// ── writes ───────────────────────────────────────────────────────────
 async function upsertClassSlots(slotDefs) {
   const { data: existing, error } = await supabase.from('class_slots').select('*')
   if (error) throw error
 
-  const result = new Map() // name -> row
+  const result = new Map()
   for (const def of slotDefs) {
     const match = existing.find((s) => s.day === def.day && s.time === def.time && s.location === def.location)
     if (match) { result.set(def.name, match); continue }
 
-    console.log(`  + class_slot: ${def.name} (${def.day} ${def.time} ${def.location}, cap ${def.capacity})`)
+    console.log(`  + class_slot: ${def.name}`)
     if (DRY_RUN) { result.set(def.name, { id: null, ...def }); continue }
 
-    const { data, error: insertErr } = await supabase
-      .from('class_slots')
+    const { data, error: e } = await supabase.from('class_slots')
       .insert({ name: def.name, location: def.location, day: def.day, time: def.time, capacity: def.capacity })
-      .select()
-      .single()
-    if (insertErr) throw insertErr
+      .select().single()
+    if (e) throw e
     result.set(def.name, data)
   }
   return result
 }
 
 async function upsertClients(clientDefs, slotRowsByName) {
-  const { data: existingClients, error: clientsErr } = await supabase.from('clients').select('*')
-  if (clientsErr) throw clientsErr
-  const { data: existingLinks, error: linksErr } = await supabase.from('client_recurring_slots').select('*')
-  if (linksErr) throw linksErr
+  const { data: existingClients, error: ce } = await supabase.from('clients').select('*')
+  if (ce) throw ce
+  const { data: existingLinks, error: le } = await supabase.from('client_recurring_slots').select('*')
+  if (le) throw le
 
   for (const def of clientDefs) {
     let client = existingClients.find((c) => c.name === def.name)
     if (!client) {
-      console.log(`  + client: ${def.name} (${def.location}, ${def.service_type}, R${def.rate})`)
-      if (DRY_RUN) {
-        client = { id: null, ...def }
-      } else {
-        const { data, error } = await supabase
-          .from('clients')
-          .insert({
-            name: def.name,
-            location: def.location,
-            service_type: def.service_type,
-            rate: def.rate,
-            scale_enabled: def.scale_enabled,
-          })
-          .select()
-          .single()
-        if (error) throw error
-        client = data
-      }
+      console.log(`  + client: ${def.name} (${def.location}, ${def.service_type}, ${def.currency} ${def.rate} / R${def.month_rate}pm)`)
+      if (DRY_RUN) { client = { id: null, ...def }; continue }
+
+      const { data, error: e } = await supabase.from('clients')
+        .insert({ name: def.name, location: def.location, service_type: def.service_type,
+                  rate: def.rate, currency: def.currency, month_rate: def.month_rate, scale_enabled: def.scale_enabled })
+        .select().single()
+      if (e) throw e
+      client = data
     } else {
-      console.log(`  = client already exists: ${def.name}`)
+      console.log(`  = client exists: ${def.name}`)
     }
 
     for (const slotDef of def.recurringSlots) {
       const slotRow = slotRowsByName.get(slotDef.name)
-      const alreadyLinked = existingLinks.find(
-        (l) => l.client_id === client.id && l.class_slot_id === slotRow.id
-      )
-      if (alreadyLinked) {
-        console.log(`    = recurring slot already linked: ${slotDef.name}`)
+      if (existingLinks.find((l) => l.client_id === client.id && l.class_slot_id === slotRow?.id)) {
+        console.log(`    = already linked: ${slotDef.name}`)
         continue
       }
+      console.log(`    + recurring: ${slotDef.name}`)
+      if (DRY_RUN || !slotRow?.id) continue
 
-      console.log(`    + recurring slot: ${slotDef.name}`)
-      if (DRY_RUN) continue
-
-      const { error } = await supabase.from('client_recurring_slots').insert({
-        client_id: client.id,
-        class_slot_id: slotRow.id,
-        day: slotRow.day,
-        time: slotRow.time,
-      })
-      if (error) throw error
+      const { error: e } = await supabase.from('client_recurring_slots')
+        .insert({ client_id: client.id, class_slot_id: slotRow.id, day: slotRow.day, time: slotRow.time })
+      if (e) throw e
     }
   }
 }
 
+// ── main ─────────────────────────────────────────────────────────────
 async function main() {
-  if (DRY_RUN) console.log('--- DRY RUN: no writes will be made ---\n')
+  if (DRY_RUN) console.log('--- DRY RUN ---\n')
 
   console.log('Validating Classes.csv...')
   const slotDefs = loadClassSlotDefs()
@@ -242,6 +246,11 @@ async function main() {
   console.log('Validating Clients.csv...')
   const clientDefs = loadClientDefs(slotDefs)
   console.log(`  ${clientDefs.length} client(s) OK`)
+
+  if (WIPE) {
+    console.log('\nWiping all records...')
+    await wipeAll()
+  }
 
   console.log('\nImporting class slots...')
   const slotRowsByName = await upsertClassSlots(slotDefs)
@@ -253,7 +262,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  if (err instanceof ValidationError) console.error('Validation failed:', err.message)
-  else console.error('Import failed:', err.message)
+  if (err instanceof ValidationError) console.error('\nValidation failed:', err.message)
+  else console.error('\nImport failed:', err.message)
   process.exit(1)
 })

@@ -40,10 +40,11 @@ create table class_instances (
 create table clients (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  location text not null check (location in ('Sedgefield', 'Knysna', 'Both')),
-  service_type text not null check (service_type in ('Group', 'Private', 'Both')),
+  location text not null check (location in ('Sedgefield', 'Knysna', 'Both', 'Zoom')),
+  service_type text not null check (service_type in ('Group', 'Private', 'Both', 'Duet', 'Zoom')),
   rate numeric(10, 2) not null check (rate >= 0),
   scale_enabled boolean not null default false,
+  currency text not null default 'ZAR' check (currency in ('ZAR', 'USD', 'CAD')),
   month_rate numeric(10, 2) not null default 0,
   archived boolean not null default false,
   created_at timestamptz not null default now()

@@ -1,6 +1,7 @@
+export type Currency = 'ZAR' | 'USD' | 'CAD'
 export type Location = 'Sedgefield' | 'Knysna'
-export type ClientLocation = Location | 'Both'
-export type ServiceType = 'Group' | 'Private' | 'Both'
+export type ClientLocation = Location | 'Both' | 'Zoom'
+export type ServiceType = 'Group' | 'Private' | 'Both' | 'Duet' | 'Zoom'
 export type Day = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday'
 export type SessionStatus = 'attended' | 'absent'
 
@@ -40,6 +41,7 @@ export interface Client {
   service_type: ServiceType
   rate: number
   scale_enabled: boolean
+  currency: Currency
   month_rate: number
   archived: boolean
   created_at: string
