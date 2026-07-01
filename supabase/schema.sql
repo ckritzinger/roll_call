@@ -72,7 +72,7 @@ create table sessions (
   client_id uuid not null references clients(id),
   class_instance_id uuid not null references class_instances(id),
   date date not null,
-  status text not null default 'attended' check (status in ('attended', 'absent')),
+  status text not null default 'attended' check (status in ('attended', 'absent', 'excused')),
   is_recurring boolean not null default false,
   amount numeric(10, 2) not null,
   notes text,

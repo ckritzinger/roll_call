@@ -37,14 +37,14 @@
         </div>
         <button
           class="text-sm font-medium px-3 py-1.5 rounded-full"
-          :class="
-            session.status === 'absent'
-              ? 'bg-red-100 text-red-700'
-              : 'bg-green-100 text-green-700'
-          "
+          :class="{
+            'bg-green-100 text-green-700': session.status === 'attended',
+            'bg-red-100 text-red-700':     session.status === 'absent',
+            'bg-yellow-100 text-yellow-700': session.status === 'excused',
+          }"
           @click="toggleStatus(session)"
         >
-          {{ session.status === 'absent' ? 'Absent' : 'Attended' }}
+          {{ session.status === 'attended' ? 'Attended' : session.status === 'absent' ? 'Absent' : 'Excused' }}
         </button>
       </li>
       <li v-if="!visibleSessions.length" class="text-sm text-gray-400 py-8 text-center">
@@ -107,7 +107,8 @@ const visibleSessions = computed(() => {
 })
 
 async function toggleStatus(session: SessionWithDetails) {
-  const next = session.status === 'attended' ? 'absent' : 'attended'
+  const cycle = { attended: 'absent', absent: 'excused', excused: 'attended' } as const
+  const next = cycle[session.status]
   const { error } = await supabase.from('sessions').update({ status: next }).eq('id', session.id)
   if (!error) session.status = next
 }
