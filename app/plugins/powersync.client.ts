@@ -4,6 +4,8 @@ import { AppSchema } from '~/powersync/schema'
 export default defineNuxtPlugin({
   async setup(nuxtApp) {
     const supabase = useSupabaseClient()
+    const user = useSupabaseUser()
+    const config = useRuntimeConfig()
 
     const db = new NuxtPowerSyncDatabase({
       schema: AppSchema,
@@ -12,7 +14,12 @@ export default defineNuxtPlugin({
 
     const connector = {
       async fetchCredentials() {
-        return $fetch<{ token: string; endpoint: string }>('/api/powersync/token')
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) throw new Error('Not authenticated')
+        return {
+          endpoint: config.public.powerSyncUrl as string,
+          token: session.access_token,
+        }
       },
 
       async uploadData(database: typeof db) {
@@ -22,7 +29,6 @@ export default defineNuxtPlugin({
         try {
           for (const op of transaction.crud) {
             const { table, id, opData, op: opType } = op
-
             if (opType === 'PATCH') {
               const { error } = await supabase.from(table as any).update(opData!).eq('id', id)
               if (error) throw error
@@ -37,13 +43,24 @@ export default defineNuxtPlugin({
           await transaction.complete()
         } catch (e) {
           console.error('[PowerSync] uploadData failed:', e)
-          throw e // PowerSync will retry
+          throw e
         }
       },
     }
 
     await db.init()
-    await db.connect(connector)
+
+    if (user.value) {
+      await db.connect(connector)
+    }
+
+    watch(user, async (newUser, oldUser) => {
+      if (newUser && !oldUser) {
+        await db.connect(connector)
+      } else if (!newUser && oldUser) {
+        await db.disconnect()
+      }
+    })
 
     nuxtApp.vueApp.use(createPowerSyncPlugin({ database: db }))
   },

@@ -108,13 +108,8 @@ insert into settings (id) values (true);
 
 -- ──────────────────────────────────────────────────────────────────
 -- Row Level Security
--- Phase 1 ships with NO auth (per base.md WHAT CARL DECIDES + explicit
--- confirmation). These policies grant the anon key full read/write so
--- the app works without a login screen. This is intentionally wide
--- open — anyone with the Supabase anon key + URL can read/write all
--- data. Acceptable for an unauthenticated single-admin Phase 1 tool,
--- but MUST be replaced with authenticated, user-scoped policies before
--- Phase 2 (client-facing booking) ships.
+-- Any authenticated user has full read/write access — single-admin
+-- Phase 1 setup. Phase 2 will narrow these to per-user scopes.
 -- ──────────────────────────────────────────────────────────────────
 alter table class_slots enable row level security;
 alter table class_instances enable row level security;
@@ -124,10 +119,10 @@ alter table sessions enable row level security;
 alter table invoices enable row level security;
 alter table settings enable row level security;
 
-create policy "phase1_anon_full_access" on class_slots for all using (true) with check (true);
-create policy "phase1_anon_full_access" on class_instances for all using (true) with check (true);
-create policy "phase1_anon_full_access" on clients for all using (true) with check (true);
-create policy "phase1_anon_full_access" on client_recurring_slots for all using (true) with check (true);
-create policy "phase1_anon_full_access" on sessions for all using (true) with check (true);
-create policy "phase1_anon_full_access" on invoices for all using (true) with check (true);
-create policy "phase1_anon_full_access" on settings for all using (true) with check (true);
+create policy "authenticated_full_access" on class_slots             for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on class_instances          for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on clients                  for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on client_recurring_slots   for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on sessions                 for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on invoices                 for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "authenticated_full_access" on settings                 for all using (auth.uid() is not null) with check (auth.uid() is not null);

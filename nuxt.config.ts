@@ -4,16 +4,13 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@powersync/nuxt'],
   supabase: {
-    // Phase 1 is unauthenticated (admin-only, no login screen) — disable
-    // the module's default redirect-to-login behavior.
     redirectOptions: {
-      login: '/',
-      callback: '/',
-      exclude: ['*']
-    }
+      login: '/login',
+      callback: '/confirm',
+      exclude: ['/login'],
+    },
   },
   runtimeConfig: {
-    powerSyncToken: '',   // NUXT_POWER_SYNC_TOKEN
     public: {
       powerSyncUrl: '',   // NUXT_PUBLIC_POWER_SYNC_URL
     },
