@@ -2,7 +2,7 @@ import { createPowerSyncPlugin } from '@powersync/vue'
 import { AppSchema } from '~/powersync/schema'
 
 export default defineNuxtPlugin({
-  async setup(nuxtApp) {
+  setup(nuxtApp) {
     const supabase = useSupabaseClient()
     const user = useSupabaseUser()
     const config = useRuntimeConfig()
@@ -48,20 +48,17 @@ export default defineNuxtPlugin({
       },
     }
 
-    await db.init()
+    // Provide DB synchronously so usePowerSync() / useQuery() are available
+    // immediately when components render. init() + connect() run in the background.
+    nuxtApp.vueApp.use(createPowerSyncPlugin({ database: db }))
 
-    if (user.value) {
-      await db.connect(connector)
-    }
-
-    watch(user, async (newUser, oldUser) => {
-      if (newUser && !oldUser) {
-        await db.connect(connector)
-      } else if (!newUser && oldUser) {
-        await db.disconnect()
-      }
+    db.init().then(() => {
+      if (user.value) db.connect(connector)
     })
 
-    nuxtApp.vueApp.use(createPowerSyncPlugin({ database: db }))
+    watch(user, (newUser, oldUser) => {
+      if (newUser && !oldUser) db.connect(connector)
+      else if (!newUser && oldUser) db.disconnect()
+    })
   },
 })
