@@ -3,6 +3,8 @@ import { AppSchema } from '~/powersync/schema'
 
 export default defineNuxtPlugin({
   async setup(nuxtApp) {
+    const supabase = useSupabaseClient()
+
     const db = new NuxtPowerSyncDatabase({
       schema: AppSchema,
       database: { dbFilename: 'roll_call.db' },
@@ -12,8 +14,31 @@ export default defineNuxtPlugin({
       async fetchCredentials() {
         return $fetch<{ token: string; endpoint: string }>('/api/powersync/token')
       },
-      async uploadData() {
-        // All writes go through Supabase directly — nothing to upload via PowerSync
+
+      async uploadData(database: typeof db) {
+        const transaction = await database.getNextCrudTransaction()
+        if (!transaction) return
+
+        try {
+          for (const op of transaction.crud) {
+            const { table, id, opData, op: opType } = op
+
+            if (opType === 'PATCH') {
+              const { error } = await supabase.from(table as any).update(opData!).eq('id', id)
+              if (error) throw error
+            } else if (opType === 'PUT') {
+              const { error } = await supabase.from(table as any).upsert({ id, ...opData })
+              if (error) throw error
+            } else if (opType === 'DELETE') {
+              const { error } = await supabase.from(table as any).delete().eq('id', id)
+              if (error) throw error
+            }
+          }
+          await transaction.complete()
+        } catch (e) {
+          console.error('[PowerSync] uploadData failed:', e)
+          throw e // PowerSync will retry
+        }
       },
     }
 

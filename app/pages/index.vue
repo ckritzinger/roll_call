@@ -72,7 +72,7 @@ import { useQuery } from '@powersync/vue'
 import { getCurrentWeekRange } from '~/composables/useWeekGeneration'
 import type { SessionWithDetails, SessionStatus, ClientLocation, ServiceType, Currency, Location, Day } from '~/types'
 
-const supabase = useSupabaseClient()
+const ps = usePowerSync()
 const generating = ref(false)
 const showPast = ref(false)
 const showAddModal = ref(false)
@@ -168,9 +168,9 @@ const visibleSessions = computed(() => {
 async function toggleStatus(session: SessionWithDetails) {
   const cycle = { attended: 'absent', absent: 'excused', excused: 'attended' } as const
   const next = cycle[session.status]
-  session.status = next  // optimistic update in local ref
-  await supabase.from('sessions').update({ status: next }).eq('id', session.id)
-  // PowerSync syncs the Supabase change back and rawRows watcher rebuilds sessions
+  session.status = next  // optimistic: prevent flicker before useQuery reacts
+  await ps.value.execute('UPDATE sessions SET status = ? WHERE id = ?', [next, session.id])
+  // PowerSync updates local SQLite instantly → useQuery reacts → uploadData pushes to Supabase
 }
 
 function formatDateTime(date: string, time: string) {
