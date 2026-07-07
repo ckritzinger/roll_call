@@ -1,5 +1,10 @@
 import { createPowerSyncPlugin } from '@powersync/vue'
+import { createBaseLogger, LogLevel } from '@powersync/web'
 import { AppSchema } from '~/powersync/schema'
+
+const logger = createBaseLogger()
+logger.useDefaults()
+logger.setLevel(LogLevel.DEBUG)
 
 export default defineNuxtPlugin({
   setup(nuxtApp) {
@@ -16,10 +21,9 @@ export default defineNuxtPlugin({
       async fetchCredentials() {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) throw new Error('Not authenticated')
-        return {
-          endpoint: config.public.powerSyncUrl as string,
-          token: session.access_token,
-        }
+        const endpoint = config.public.powerSyncUrl as string
+        console.log('[PowerSync] connecting to', endpoint || '(empty — NUXT_PUBLIC_POWER_SYNC_URL not set)')
+        return { endpoint, token: session.access_token }
       },
 
       async uploadData(database: typeof db) {
