@@ -62,41 +62,100 @@
     <AddAdHocSessionModal
       v-if="showAddModal"
       @close="showAddModal = false"
-      @added="onAdded"
+      @added="showAddModal = false"
     />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useQuery } from '@powersync/vue'
 import { getCurrentWeekRange } from '~/composables/useWeekGeneration'
-import type { SessionWithDetails } from '~/types'
+import type { SessionWithDetails, SessionStatus, ClientLocation, ServiceType, Currency, Location, Day } from '~/types'
 
 const supabase = useSupabaseClient()
-const loading = ref(true)
 const generating = ref(false)
 const showPast = ref(false)
 const showAddModal = ref(false)
 const sessions = ref<SessionWithDetails[]>([])
 
-async function loadWeek() {
-  const { start, end } = getCurrentWeekRange()
-  const { data } = await supabase
-    .from('sessions')
-    .select('*, client:clients(*), class_instance:class_instances(*, class_slot:class_slots(*))')
-    .gte('date', start)
-    .lte('date', end)
+const { start, end } = getCurrentWeekRange()
 
-  sessions.value = ((data as SessionWithDetails[]) ?? []).sort((a, b) => {
-    const aKey = `${a.date}T${a.class_instance.time}`
-    const bKey = `${b.date}T${b.class_instance.time}`
-    return aKey.localeCompare(bKey)
-  })
+// Flatten the PowerSync JOIN result back into the nested SessionWithDetails shape
+// the template expects. SQLite booleans come back as 0/1 integers.
+function mapRow(row: Record<string, unknown>): SessionWithDetails {
+  return {
+    id: row.id as string,
+    client_id: row.client_id as string,
+    class_instance_id: row.class_instance_id as string,
+    date: row.date as string,
+    status: row.status as SessionStatus,
+    is_recurring: Boolean(row.is_recurring),
+    amount: row.amount as number,
+    notes: row.notes as string | null,
+    created_at: row.created_at as string,
+    client: {
+      id: row.client_id as string,
+      name: row.c_name as string,
+      location: row.c_location as ClientLocation,
+      service_type: row.c_service_type as ServiceType,
+      rate: row.c_rate as number,
+      scale_enabled: Boolean(row.c_scale_enabled),
+      currency: row.c_currency as Currency,
+      month_rate: row.c_month_rate as number,
+      archived: Boolean(row.c_archived),
+      created_at: row.created_at as string,
+    },
+    class_instance: {
+      id: row.class_instance_id as string,
+      class_slot_id: row.class_slot_id as string,
+      date: row.date as string,
+      time: row.ci_time as string,
+      location: row.ci_location as Location,
+      capacity: row.ci_capacity as number,
+      created_at: row.created_at as string,
+      class_slot: {
+        id: row.class_slot_id as string,
+        name: row.cs_name as string,
+        location: row.cs_location as Location,
+        day: row.cs_day as Day,
+        time: row.cs_time as string,
+        capacity: row.cs_capacity as number,
+        archived: Boolean(row.cs_archived),
+        created_at: row.created_at as string,
+      },
+    },
+  }
 }
+
+const { data: rawRows, isLoading: loading } = useQuery(
+  `SELECT
+    s.id, s.client_id, s.class_instance_id, s.date, s.status,
+    s.is_recurring, s.amount, s.notes, s.created_at,
+    c.name AS c_name, c.location AS c_location, c.service_type AS c_service_type,
+    c.rate AS c_rate, c.scale_enabled AS c_scale_enabled, c.currency AS c_currency,
+    c.month_rate AS c_month_rate, c.archived AS c_archived,
+    ci.time AS ci_time, ci.location AS ci_location,
+    ci.capacity AS ci_capacity, ci.class_slot_id,
+    cs.name AS cs_name, cs.location AS cs_location, cs.day AS cs_day,
+    cs.time AS cs_time, cs.capacity AS cs_capacity, cs.archived AS cs_archived
+   FROM sessions s
+   JOIN clients c ON s.client_id = c.id
+   JOIN class_instances ci ON s.class_instance_id = ci.id
+   JOIN class_slots cs ON ci.class_slot_id = cs.id
+   WHERE s.date >= ? AND s.date <= ?
+   ORDER BY s.date, ci.time`,
+  [start, end]
+)
+
+// Keep a mutable ref so optimistic status toggles work without waiting for sync
+watch(rawRows, (rows) => {
+  sessions.value = (rows ?? []).map(mapRow)
+}, { immediate: true })
 
 async function generateWeek() {
   generating.value = true
   await $fetch('/api/generate-week', { method: 'POST' })
-  await loadWeek()
+  // No manual reload needed — PowerSync syncs the new sessions reactively
   generating.value = false
 }
 
@@ -109,8 +168,9 @@ const visibleSessions = computed(() => {
 async function toggleStatus(session: SessionWithDetails) {
   const cycle = { attended: 'absent', absent: 'excused', excused: 'attended' } as const
   const next = cycle[session.status]
-  const { error } = await supabase.from('sessions').update({ status: next }).eq('id', session.id)
-  if (!error) session.status = next
+  session.status = next  // optimistic update in local ref
+  await supabase.from('sessions').update({ status: next }).eq('id', session.id)
+  // PowerSync syncs the Supabase change back and rawRows watcher rebuilds sessions
 }
 
 function formatDateTime(date: string, time: string) {
@@ -123,14 +183,4 @@ function formatDateTime(date: string, time: string) {
     minute: '2-digit'
   })
 }
-
-async function onAdded() {
-  showAddModal.value = false
-  await loadWeek()
-}
-
-onMounted(async () => {
-  await loadWeek()
-  loading.value = false
-})
 </script>
