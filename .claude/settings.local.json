@@ -12,7 +12,8 @@
       "WebFetch(domain:docs.powersync.com)",
       "WebFetch(domain:github.com)",
       "WebSearch",
-      "Bash(vercel deploy *)"
+      "Bash(vercel deploy *)",
+      "Bash(vercel build *)"
     ]
   }
 }
