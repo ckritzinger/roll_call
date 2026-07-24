@@ -10,7 +10,8 @@
       "Bash(python3 -m json.tool)",
       "Bash(supabase db *)",
       "WebFetch(domain:docs.powersync.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebSearch"
     ]
   }
 }

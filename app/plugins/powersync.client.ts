@@ -1,10 +1,6 @@
 import { createPowerSyncPlugin } from '@powersync/vue'
-import { createBaseLogger, LogLevel } from '@powersync/web'
+import { createConsoleLogger, LogLevels } from '@powersync/web'
 import { AppSchema } from '~/powersync/schema'
-
-const logger = createBaseLogger()
-logger.useDefaults()
-logger.setLevel(LogLevel.DEBUG)
 
 export default defineNuxtPlugin({
   setup(nuxtApp) {
@@ -15,6 +11,7 @@ export default defineNuxtPlugin({
     const db = new NuxtPowerSyncDatabase({
       schema: AppSchema,
       database: { dbFilename: 'roll_call.db' },
+      logger: createConsoleLogger({ minLevel: LogLevels.trace }),
     })
 
     const connector = {
