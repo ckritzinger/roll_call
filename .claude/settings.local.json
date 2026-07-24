@@ -11,7 +11,8 @@
       "Bash(supabase db *)",
       "WebFetch(domain:docs.powersync.com)",
       "WebFetch(domain:github.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(vercel deploy *)"
     ]
   }
 }
